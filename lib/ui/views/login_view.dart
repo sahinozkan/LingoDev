@@ -1,11 +1,13 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../atoms/app_button.dart';
 import '../atoms/app_input.dart';
+import 'home_view.dart';
 
-/// LingoDev Giriş Ekranı
-/// Premium dark tema, Lila gradient, Plus Jakarta Sans tipografi
+/// LingoDev Giriş / Kayıt Ekranı
+/// Firebase Auth entegrasyonlu, premium dark tema
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
 
@@ -18,9 +20,11 @@ class _LoginViewState extends State<LoginView>
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final _auth = FirebaseAuth.instance;
 
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _isRegisterMode = false; // Giriş ↔ Kayıt modu geçişi
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
@@ -55,14 +59,171 @@ class _LoginViewState extends State<LoginView>
     super.dispose();
   }
 
-  void _handleLogin() {
-    if (_formKey.currentState?.validate() ?? false) {
-      setState(() => _isLoading = true);
-      // TODO: Gerçek giriş mantığı eklenecek
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _isLoading = false);
-      });
+  // ── Firebase Auth: Giriş Yap ─────────────────────────────
+  Future<void> _handleLogin() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+      debugPrint('İşlem Başarılı: ${credential.user?.uid}');
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeView()),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) _showErrorSnackBar(_mapFirebaseError(e.code));
+    } catch (e) {
+      if (mounted) _showErrorSnackBar('Beklenmeyen bir hata oluştu.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  // ── Firebase Auth: Kayıt Ol ──────────────────────────────
+  Future<void> _handleRegister() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+      debugPrint('İşlem Başarılı: ${credential.user?.uid}');
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeView()),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) _showErrorSnackBar(_mapFirebaseError(e.code));
+    } catch (e) {
+      if (mounted) _showErrorSnackBar('Beklenmeyen bir hata oluştu.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ── Şifremi Unuttum ──────────────────────────────────────
+  Future<void> _handleForgotPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      _showErrorSnackBar('Lütfen önce e-posta adresinizi girin.');
+      return;
+    }
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+      if (mounted) {
+        _showSuccessSnackBar('Şifre sıfırlama bağlantısı gönderildi 📧');
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) _showErrorSnackBar(_mapFirebaseError(e.code));
+    } catch (e) {
+      if (mounted) _showErrorSnackBar('Beklenmeyen bir hata oluştu.');
+    }
+  }
+
+  // ── Mod Geçişi ────────────────────────────────────────────
+  void _toggleMode() {
+    setState(() {
+      _isRegisterMode = !_isRegisterMode;
+      _formKey.currentState?.reset();
+    });
+  }
+
+  // ── Firebase Hata Kodlarını Türkçeleştirme ────────────────
+  String _mapFirebaseError(String code) {
+    switch (code) {
+      case 'user-not-found':
+        return 'Bu e-posta adresiyle kayıtlı bir hesap bulunamadı.';
+      case 'wrong-password':
+        return 'Girdiğiniz şifre yanlış.';
+      case 'invalid-credential':
+        return 'E-posta veya şifre hatalı.';
+      case 'email-already-in-use':
+        return 'Bu e-posta adresi zaten kullanılıyor.';
+      case 'weak-password':
+        return 'Şifre çok zayıf. En az 6 karakter kullanın.';
+      case 'invalid-email':
+        return 'Geçersiz e-posta adresi formatı.';
+      case 'user-disabled':
+        return 'Bu hesap devre dışı bırakılmış.';
+      case 'too-many-requests':
+        return 'Çok fazla deneme yaptınız. Lütfen biraz bekleyin.';
+      case 'network-request-failed':
+        return 'İnternet bağlantınızı kontrol edin.';
+      case 'operation-not-allowed':
+        return 'Bu giriş yöntemi aktif değil.';
+      default:
+        return 'Bir hata oluştu. Lütfen tekrar deneyin.';
+    }
+  }
+
+  // ── Hata SnackBar ─────────────────────────────────────────
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  // ── Başarı SnackBar ───────────────────────────────────────
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: AppColors.success,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   @override
@@ -98,12 +259,18 @@ class _LoginViewState extends State<LoginView>
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text(
-                          'İngilizce öğrenmenin en akıllı yolu',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w400,
-                            color: AppColors.textSecondary,
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: Text(
+                            _isRegisterMode
+                                ? 'Hemen ücretsiz hesap oluştur'
+                                : 'İngilizce öğrenmenin en akıllı yolu',
+                            key: ValueKey(_isRegisterMode),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w400,
+                              color: AppColors.textSecondary,
+                            ),
                           ),
                         ),
 
@@ -158,32 +325,40 @@ class _LoginViewState extends State<LoginView>
                           },
                         ),
 
-                        // ── Şifremi Unuttum ──────────────────────
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () {
-                              // TODO: Şifremi unuttum akışı
-                            },
-                            child: Text(
-                              'Şifremi Unuttum',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary,
+                        // ── Şifremi Unuttum (sadece Giriş modunda) ──
+                        AnimatedCrossFade(
+                          duration: const Duration(milliseconds: 300),
+                          crossFadeState: _isRegisterMode
+                              ? CrossFadeState.showSecond
+                              : CrossFadeState.showFirst,
+                          firstChild: Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _handleForgotPassword,
+                              child: Text(
+                                'Şifremi Unuttum',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
                               ),
                             ),
                           ),
+                          secondChild: const SizedBox(height: 16),
                         ),
 
                         const SizedBox(height: 8),
 
-                        // ── Giriş Yap Butonu ─────────────────────
+                        // ── Ana Buton (Giriş / Kayıt) ────────────
                         AppButton(
-                          text: 'Giriş Yap',
-                          icon: Icons.arrow_forward_rounded,
+                          text: _isRegisterMode ? 'Kayıt Ol' : 'Giriş Yap',
+                          icon: _isRegisterMode
+                              ? Icons.person_add_rounded
+                              : Icons.arrow_forward_rounded,
                           isLoading: _isLoading,
-                          onPressed: _handleLogin,
+                          onPressed:
+                              _isRegisterMode ? _handleRegister : _handleLogin,
                         ),
 
                         const SizedBox(height: 24),
@@ -194,7 +369,8 @@ class _LoginViewState extends State<LoginView>
                             Expanded(
                               child: Container(
                                 height: 1,
-                                color: AppColors.textHint.withValues(alpha: 0.3),
+                                color:
+                                    AppColors.textHint.withValues(alpha: 0.3),
                               ),
                             ),
                             Padding(
@@ -211,7 +387,8 @@ class _LoginViewState extends State<LoginView>
                             Expanded(
                               child: Container(
                                 height: 1,
-                                color: AppColors.textHint.withValues(alpha: 0.3),
+                                color:
+                                    AppColors.textHint.withValues(alpha: 0.3),
                               ),
                             ),
                           ],
@@ -230,23 +407,23 @@ class _LoginViewState extends State<LoginView>
 
                         const SizedBox(height: 32),
 
-                        // ── Kayıt Ol ─────────────────────────────
+                        // ── Mod Geçişi (Giriş ↔ Kayıt) ──────────
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              'Hesabın yok mu? ',
+                              _isRegisterMode
+                                  ? 'Zaten hesabın var mı? '
+                                  : 'Hesabın yok mu? ',
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 14,
                                 color: AppColors.textSecondary,
                               ),
                             ),
                             GestureDetector(
-                              onTap: () {
-                                // TODO: Kayıt ekranına yönlendirme
-                              },
+                              onTap: _toggleMode,
                               child: Text(
-                                'Kayıt Ol',
+                                _isRegisterMode ? 'Giriş Yap' : 'Kayıt Ol',
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -269,27 +446,12 @@ class _LoginViewState extends State<LoginView>
     );
   }
 
-  /// Lila çerçeveli logo ikonu
+  /// Marka Logosu
   Widget _buildLogo() {
-    return Container(
-      width: 80,
-      height: 80,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: AppColors.primaryGradient,
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.4),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: const Icon(
-        Icons.translate_rounded,
-        size: 40,
-        color: Colors.white,
-      ),
+    return Image.asset(
+      'assets/images/logo_monogram.png',
+      height: 140,
+      fit: BoxFit.contain,
     );
   }
 }
