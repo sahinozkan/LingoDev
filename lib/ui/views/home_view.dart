@@ -5,12 +5,15 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/models/package_model.dart';
 import '../../core/models/word_model.dart';
 import '../../core/services/package_repository.dart';
+import '../../core/services/package_seeder.dart';
 import '../../core/services/word_repository.dart';
 import '../../core/theme/app_colors.dart';
+import '../atoms/app_button.dart';
 import '../molecules/word_card.dart';
 import 'add_word_view.dart';
 import 'login_view.dart';
 import 'package_list_view.dart';
+import 'practice_view.dart';
 
 /// LingoDev Ana Sayfa
 /// Giriş yapan kullanıcının kelimelerini Firestore'dan gerçek zamanlı listeler.
@@ -23,12 +26,69 @@ class HomeView extends StatefulWidget {
 
 class _HomeViewState extends State<HomeView> {
   late final WordRepository _wordRepo;
+  late Future<int> _dueCountFuture;
+
+  bool _isSeeding = false;
 
   @override
   void initState() {
     super.initState();
     final uid = FirebaseAuth.instance.currentUser!.uid;
     _wordRepo = WordRepository(userId: uid);
+    _dueCountFuture = _wordRepo.getDueCount();
+  }
+
+  /// GEÇİCİ: paketleri Firestore'a yükler, paketler yüklendikten sonra
+  /// bu metot ve butonu silinecek.
+  Future<void> _handleSeedPackages() async {
+    if (_isSeeding) return;
+    setState(() => _isSeeding = true);
+
+    try {
+      await seedPackages();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Paketler yüklendi',
+            style: GoogleFonts.poppins(fontSize: 13),
+          ),
+          backgroundColor: AppColors.primaryDark,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Paketler yüklenemedi: $e',
+            style: GoogleFonts.poppins(fontSize: 13),
+          ),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSeeding = false);
+    }
+  }
+
+  /// Pratik ekranından dönüldüğünde "bugün tekrar" sayısını yeniden çeker.
+  Future<void> _openPractice() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PracticeView()),
+    );
+    if (mounted) {
+      setState(() => _dueCountFuture = _wordRepo.getDueCount());
+    }
   }
 
   /// [PackageRepository.watchPackages()] için güvenli stream sarmalayıcı.
@@ -259,6 +319,25 @@ class _HomeViewState extends State<HomeView> {
                         ),
                       ),
 
+                      // ── Sliver 2.5: Bugün tekrar (spaced repetition) ────
+                      SliverToBoxAdapter(
+                        child: FutureBuilder<int>(
+                          future: _dueCountFuture,
+                          builder: (context, dueSnapshot) {
+                            final isLoading = dueSnapshot.connectionState ==
+                                ConnectionState.waiting;
+                            final dueCount = dueSnapshot.data ?? 0;
+                            return _DueReviewCard(
+                              dueCount: dueCount,
+                              isLoading: isLoading,
+                              onTap: (!isLoading && dueCount > 0)
+                                  ? _openPractice
+                                  : null,
+                            );
+                          },
+                        ),
+                      ),
+
                       // ── Sliver 3: Kelimelerim header ────────────
                       SliverToBoxAdapter(
                         child: Padding(
@@ -315,6 +394,21 @@ class _HomeViewState extends State<HomeView> {
                     ],
                   );
                 },
+              ),
+            ),
+
+            // GEÇİCİ: paketler yüklendikten sonra silinecek
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: AppButton(
+                  text: 'Paketleri Yükle (geliştirici)',
+                  icon: Icons.cloud_upload_rounded,
+                  isOutlined: true,
+                  isLoading: _isSeeding,
+                  onPressed: _isSeeding ? null : _handleSeedPackages,
+                ),
               ),
             ),
           ],
@@ -381,6 +475,110 @@ class _PackagePreviewCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Due review card (spaced repetition entry point) ────────────────────────
+
+class _DueReviewCard extends StatelessWidget {
+  const _DueReviewCard({
+    required this.dueCount,
+    required this.isLoading,
+    this.onTap,
+  });
+
+  final int dueCount;
+  final bool isLoading;
+  final VoidCallback? onTap;
+
+  static const _lila = Color(0xFFA06CD5);
+
+  @override
+  Widget build(BuildContext context) {
+    final hasWords = dueCount > 0;
+    final sessionCount = dueCount < WordRepository.dailySessionLimit
+        ? dueCount
+        : WordRepository.dailySessionLimit;
+    final hasMoreThanSession = dueCount > WordRepository.dailySessionLimit;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _lila.withOpacity(hasWords ? 0.35 : 0.12),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: _lila.withOpacity(hasWords ? 0.85 : 0.25),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.bolt_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isLoading
+                            ? 'Yükleniyor…'
+                            : hasWords
+                                ? 'Bugün tekrar: $sessionCount kelime'
+                                : 'Bugün tekrar edilecek kelime yok',
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        hasWords ? 'Pratik yapmak için dokun' : 'Yarın tekrar kontrol et',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.white54,
+                        ),
+                      ),
+                      if (hasMoreThanSession) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Toplam $dueCount kelime bekliyor',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: _lila.withOpacity(0.85),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (hasWords)
+                  const Icon(Icons.chevron_right_rounded, color: Colors.white54),
+              ],
+            ),
+          ),
         ),
       ),
     );

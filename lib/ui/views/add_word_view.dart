@@ -212,9 +212,27 @@ class _AddWordViewState extends State<AddWordView> {
         nextReviewAt: now,
       );
 
-      await WordRepository(userId: uid).addWord(word);
+      final added = await WordRepository(userId: uid).addWord(word);
 
-      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+
+      if (added) {
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Bu kelime zaten listende',
+              style: GoogleFonts.poppins(fontSize: 13),
+            ),
+            backgroundColor: AppColors.primaryDark,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

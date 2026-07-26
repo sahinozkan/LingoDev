@@ -25,7 +25,10 @@ class WordModel {
   final int masteryLevel;
 
   /// UTC timestamp of the next scheduled review session.
-  final DateTime nextReviewAt;
+  ///
+  /// `null` once [masteryLevel] reaches 5 ("mastered") — the word is then
+  /// excluded from due-word queries.
+  final DateTime? nextReviewAt;
 
   /// UTC timestamp of when the word was first added.
   final DateTime createdAt;
@@ -37,7 +40,7 @@ class WordModel {
     this.synonyms = const [],
     this.antonyms = const [],
     this.masteryLevel = 0,
-    required this.nextReviewAt,
+    this.nextReviewAt,
     required this.createdAt,
   }) : assert(
           masteryLevel >= 0 && masteryLevel <= 5,
@@ -53,17 +56,21 @@ class WordModel {
   /// Firestore [Timestamp] fields (`nextReviewAt`, `createdAt`) are
   /// automatically converted to [DateTime].
   factory WordModel.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>? ?? const {};
 
     return WordModel(
       id: doc.id,
-      english: data['english'] as String,
-      turkish: data['turkish'] as String,
-      synonyms: List<String>.from(data['synonyms'] as List? ?? const []),
-      antonyms: List<String>.from(data['antonyms'] as List? ?? const []),
-      masteryLevel: (data['masteryLevel'] as num?)?.toInt() ?? 0,
-      nextReviewAt: (data['nextReviewAt'] as Timestamp).toDate(),
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
+      english: data['english'] as String? ?? '',
+      turkish: data['turkish'] as String? ?? '',
+      synonyms: (data['synonyms'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      antonyms: (data['antonyms'] as List? ?? const [])
+          .map((e) => e.toString())
+          .toList(),
+      masteryLevel: ((data['masteryLevel'] as num?)?.toInt() ?? 0).clamp(0, 5),
+      nextReviewAt: (data['nextReviewAt'] as Timestamp?)?.toDate(),
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
 
@@ -78,7 +85,8 @@ class WordModel {
       'synonyms': synonyms,
       'antonyms': antonyms,
       'masteryLevel': masteryLevel,
-      'nextReviewAt': Timestamp.fromDate(nextReviewAt),
+      'nextReviewAt':
+          nextReviewAt != null ? Timestamp.fromDate(nextReviewAt!) : null,
       'createdAt': Timestamp.fromDate(createdAt),
     };
   }
