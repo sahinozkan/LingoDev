@@ -37,6 +37,7 @@ class _HomeViewState extends State<HomeView> {
   }
 
   // TODO: Yükleme sonrası silinecek
+  // ignore: unused_element
   Future<void> _runSeeder() async {
     if (_isSeeding) return;
     setState(() => _isSeeding = true);
@@ -146,6 +147,8 @@ class _HomeViewState extends State<HomeView> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    // Gerekirse ileride tekrar açmak için yorum satırına alındı:
+                    /*
                     // TODO: Yükleme sonrası silinecek — Seeder tetikleyici buton
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -182,6 +185,7 @@ class _HomeViewState extends State<HomeView> {
                         ),
                       ),
                     ),
+                    */
                     // Çıkış butonu
                     Material(
                       color: Colors.transparent,
