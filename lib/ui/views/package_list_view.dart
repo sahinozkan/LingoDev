@@ -9,10 +9,12 @@ import 'package_detail_view.dart';
 /// Hazır kelime paketlerini listeler.
 ///
 /// ── Mimari Notlar ────────────────────────────────────────────────────────────
-/// Firestore maliyetini en aza indirmek için paketler tek seferlik [Future] ile
-/// çekilir ve [_allPackages] listesinde tutulur.
-/// Arama ve filtreleme işlemleri tamamen lokal State üzerindeki [_applyFilters()]
-/// fonksiyonu ile yapılır; her harf veya filtre değişiminde ağ isteği atılmaz.
+/// 1. Maliyet Tasarrufu: Veriler tek seferlik [Future] ile çekilir ve
+///    State içinde [_allPackages] olarak tutulur. Tüm arama/filtreleme in-memory yapılır.
+/// 2. UX & Filter Blindness Koruması:
+///    - AppBar'da seçili filtreler açıkça ("X paket (B2, health)") gösterilir.
+///    - Kullanıcı arama çubuğuna yazdığında çipler otomatik "Tümü" olarak sıfırlanır.
+///    - Arama çubuğunda ve filtre alanında tek tıkla "Filtreleri Temizle" butonu sunulur.
 class PackageListView extends StatefulWidget {
   const PackageListView({super.key});
 
@@ -35,6 +37,24 @@ class _PackageListViewState extends State<PackageListView> {
 
   late final TextEditingController _searchController;
   late final PackageRepository _repo;
+
+  // ── Akıllı Filtre Durumu ─────────────────────────────────────────────────────
+
+  bool get _hasActiveFilters =>
+      _searchQuery.isNotEmpty ||
+      _selectedLevel != 'Tümü' ||
+      _selectedCategory != 'Tümü';
+
+  String get _filterSummaryText {
+    final activeFilters = <String>[];
+    if (_selectedLevel != 'Tümü') activeFilters.add(_selectedLevel);
+    if (_selectedCategory != 'Tümü') activeFilters.add(_selectedCategory);
+
+    if (activeFilters.isEmpty) {
+      return '${_filtered.length} paket';
+    }
+    return '${_filtered.length} paket (${activeFilters.join(', ')})';
+  }
 
   // ── Dinamik Filtre Seçenekleri ──────────────────────────────────────────────
 
@@ -100,7 +120,6 @@ class _PackageListViewState extends State<PackageListView> {
 
   Future<void> _loadPackages() async {
     try {
-      // Stream'den yalnızca ilk veriyi alarak tek seferlik istek yapıyoruz
       final list = await _repo.watchPackages().first;
       if (!mounted) return;
       setState(() {
@@ -117,23 +136,34 @@ class _PackageListViewState extends State<PackageListView> {
     }
   }
 
-  // ── Lokal Filtreleme Mantığı ─────────────────────────────────────────────────
+  // ── Akıllı Sıfırlama ve Lokal Filtreleme ─────────────────────────────────────
+
+  /// Kullanıcı arama çubuğuna yazmaya başladığında, seçili filtre çiplerini
+  /// otomatik olarak "Tümü" durumuna sıfırlar. Böylece çip kısıtlaması nedeniyle
+  /// beklenmeyen sıfır sonuç çıkması (Filter Blindness) engellenir.
+  void _onSearchChanged(String val) {
+    if (val.trim().isNotEmpty &&
+        (_selectedLevel != 'Tümü' || _selectedCategory != 'Tümü')) {
+      _selectedLevel = 'Tümü';
+      _selectedCategory = 'Tümü';
+    }
+
+    _searchQuery = val;
+    _applyFilters();
+  }
 
   void _applyFilters() {
     final q = _searchQuery.trim().toLowerCase();
 
     setState(() {
       _filtered = _allPackages.where((pkg) {
-        // Arama filtresi (title veya description)
         final matchesSearch = q.isEmpty ||
             pkg.title.toLowerCase().contains(q) ||
             pkg.description.toLowerCase().contains(q);
 
-        // Seviye filtresi
         final matchesLevel = _selectedLevel == 'Tümü' ||
             pkg.level.trim().toUpperCase() == _selectedLevel.trim().toUpperCase();
 
-        // Kategori filtresi
         final matchesCategory = _selectedCategory == 'Tümü' ||
             pkg.category.trim().toLowerCase() == _selectedCategory.trim().toLowerCase();
 
@@ -174,6 +204,7 @@ class _PackageListViewState extends State<PackageListView> {
             color: Colors.white,
           ),
         ),
+        // ── 1. Akıllı Dinamik Rozet (Seçili Filtreleri Gösterir) ─────────────
         actions: [
           if (!_loading && _error == null)
             Padding(
@@ -182,18 +213,28 @@ class _PackageListViewState extends State<PackageListView> {
                 child: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   child: Container(
-                    key: ValueKey(_filtered.length),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    key: ValueKey(_filterSummaryText),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: AppColors.surfaceLight,
+                      color: (_selectedLevel != 'Tümü' || _selectedCategory != 'Tümü')
+                          ? AppColors.primary.withValues(alpha: 0.18)
+                          : AppColors.surfaceLight,
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: (_selectedLevel != 'Tümü' || _selectedCategory != 'Tümü')
+                            ? AppColors.primary.withValues(alpha: 0.5)
+                            : Colors.transparent,
+                        width: 1,
+                      ),
                     ),
                     child: Text(
-                      '${_filtered.length} paket',
+                      _filterSummaryText,
                       style: GoogleFonts.poppins(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary,
+                        color: (_selectedLevel != 'Tümü' || _selectedCategory != 'Tümü')
+                            ? AppColors.primaryLight
+                            : AppColors.textSecondary,
                       ),
                     ),
                   ),
@@ -219,16 +260,61 @@ class _PackageListViewState extends State<PackageListView> {
                 )
               : Column(
                   children: [
-                    // ── 1. Arama Çubuğu (Search Bar) ─────────────────────────
+                    // ── 2. Arama Çubuğu (Clear All Butonlu) ───────────────────
                     _SearchBar(
                       controller: _searchController,
-                      onChanged: (val) {
-                        _searchQuery = val;
-                        _applyFilters();
-                      },
+                      hasActiveFilters: _hasActiveFilters,
+                      onChanged: _onSearchChanged,
+                      onClearAll: _resetFilters,
                     ),
 
-                    // ── 2. Hızlı Filtre Çipleri (Seviyeler) ───────────────────
+                    // ── Filtre Başlık & Temizle Çubuğu ───────────────────────
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
+                      child: Row(
+                        children: [
+                          Text(
+                            'FİLTRELER',
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textHint,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                          const Spacer(),
+                          if (_hasActiveFilters)
+                            InkWell(
+                              onTap: _resetFilters,
+                              borderRadius: BorderRadius.circular(8),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.restart_alt_rounded,
+                                      size: 15,
+                                      color: AppColors.primaryLight,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Filtreleri Temizle',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primaryLight,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+
+                    // ── 3. Hızlı Filtre Çipleri (Seviyeler) ───────────────────
                     _FilterChipGroup(
                       title: 'Seviye',
                       options: _levels,
@@ -239,7 +325,7 @@ class _PackageListViewState extends State<PackageListView> {
                       },
                     ),
 
-                    // ── 3. Hızlı Filtre Çipleri (Kategoriler) ─────────────────
+                    // ── 4. Hızlı Filtre Çipleri (Kategoriler) ─────────────────
                     _FilterChipGroup(
                       title: 'Kategori',
                       options: _categories,
@@ -256,15 +342,13 @@ class _PackageListViewState extends State<PackageListView> {
                       color: AppColors.surfaceLight.withValues(alpha: 0.6),
                     ),
 
-                    // ── 4. Liste veya Boş Durum ───────────────────────────────
+                    // ── 5. Liste veya Boş Durum ───────────────────────────────
                     Expanded(
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 250),
                         child: _filtered.isEmpty
                             ? _EmptyState(
-                                hasFilters: _searchQuery.isNotEmpty ||
-                                    _selectedLevel != 'Tümü' ||
-                                    _selectedCategory != 'Tümü',
+                                hasFilters: _hasActiveFilters,
                                 onReset: _resetFilters,
                               )
                             : ListView.builder(
@@ -289,15 +373,22 @@ class _PackageListViewState extends State<PackageListView> {
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _SearchBar extends StatelessWidget {
-  const _SearchBar({required this.controller, required this.onChanged});
+  const _SearchBar({
+    required this.controller,
+    required this.hasActiveFilters,
+    required this.onChanged,
+    required this.onClearAll,
+  });
 
   final TextEditingController controller;
+  final bool hasActiveFilters;
   final ValueChanged<String> onChanged;
+  final VoidCallback onClearAll;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
       child: TextField(
         controller: controller,
         onChanged: onChanged,
@@ -314,35 +405,30 @@ class _SearchBar extends StatelessWidget {
             color: AppColors.textHint,
             size: 20,
           ),
-          suffixIcon: ValueListenableBuilder<TextEditingValue>(
-            valueListenable: controller,
-            builder: (context, value, _) => value.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      color: AppColors.textHint,
-                      size: 18,
-                    ),
-                    onPressed: () {
-                      controller.clear();
-                      onChanged('');
-                    },
-                  )
-                : const SizedBox.shrink(),
-          ),
+          suffixIcon: hasActiveFilters
+              ? IconButton(
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: AppColors.primaryLight,
+                    size: 19,
+                  ),
+                  tooltip: 'Tüm filtreleri ve aramayı temizle',
+                  onPressed: onClearAll,
+                )
+              : null,
           filled: true,
           fillColor: AppColors.surface,
           contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(
+            borderSide: const BorderSide(
               color: AppColors.surfaceLight,
               width: 1,
             ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide(
+            borderSide: const BorderSide(
               color: AppColors.surfaceLight,
               width: 1,
             ),
