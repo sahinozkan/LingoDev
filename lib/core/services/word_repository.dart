@@ -31,6 +31,14 @@ class WordRepository {
         .map((snapshot) => snapshot.docs.map(WordModel.fromFirestore).toList());
   }
 
+  /// Real-time stream of a single word document.
+  Stream<WordModel?> watchWord(String wordId) {
+    return _wordsCollection.doc(wordId).snapshots().map((doc) {
+      if (!doc.exists || doc.data() == null) return null;
+      return WordModel.fromFirestore(doc);
+    });
+  }
+
   /// Fetches the words due for review right now (nextReviewAt <= Timestamp.now()).
   /// Capped at [dailySessionLimit], prioritizing the most overdue words first.
   Future<List<WordModel>> getDueWords() async {

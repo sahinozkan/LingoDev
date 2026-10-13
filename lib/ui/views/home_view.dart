@@ -13,6 +13,7 @@ import 'add_word_view.dart';
 import 'login_view.dart';
 import 'package_list_view.dart';
 import 'practice_view.dart';
+import 'word_detail_view.dart';
 
 /// LingoDev Ana Sayfa
 /// Giriş yapan kullanıcının kelimelerini Firestore'dan gerçek zamanlı listeler.
@@ -410,7 +411,17 @@ class _HomeViewState extends State<HomeView> {
                             delegate: SliverChildBuilderDelegate(
                               (context, index) => Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
-                                child: WordCard(word: words[index]),
+                                child: WordCard(
+                                  word: words[index],
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => WordDetailView(
+                                        word: words[index],
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
                               childCount: words.length,
                             ),
