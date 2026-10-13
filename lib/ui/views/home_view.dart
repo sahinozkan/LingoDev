@@ -14,6 +14,7 @@ import 'login_view.dart';
 import 'package_list_view.dart';
 import 'practice_view.dart';
 import 'word_detail_view.dart';
+import 'word_list_view.dart';
 
 /// LingoDev Ana Sayfa
 /// Giriş yapan kullanıcının kelimelerini Firestore'dan gerçek zamanlı listeler.
@@ -353,26 +354,47 @@ class _HomeViewState extends State<HomeView> {
                                   color: Colors.white,
                                 ),
                               ),
-                              TextButton.icon(
-                                onPressed: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const PracticeView(),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextButton.icon(
+                                    onPressed: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const PracticeView(),
+                                      ),
+                                    ),
+                                    icon: const Icon(
+                                      Icons.psychology_rounded,
+                                      size: 16,
+                                      color: Color(0xFFA06CD5),
+                                    ),
+                                    label: Text(
+                                      'Pratik',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        color: const Color(0xFFA06CD5),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                icon: const Icon(
-                                  Icons.psychology_rounded,
-                                  size: 18,
-                                  color: Color(0xFFA06CD5),
-                                ),
-                                label: Text(
-                                  'Pratik Yap',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 13,
-                                    color: const Color(0xFFA06CD5),
-                                    fontWeight: FontWeight.w600,
+                                  TextButton(
+                                    onPressed: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const WordListView(),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      'Tümünü Gör',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        color: const Color(0xFFA06CD5),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                ],
                               ),
                             ],
                           ),
