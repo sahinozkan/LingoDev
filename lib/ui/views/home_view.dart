@@ -12,6 +12,7 @@ import '../molecules/word_card.dart';
 import 'add_word_view.dart';
 import 'login_view.dart';
 import 'package_list_view.dart';
+import 'practice_view.dart';
 
 /// LingoDev Ana Sayfa
 /// Giriş yapan kullanıcının kelimelerini Firestore'dan gerçek zamanlı listeler.
@@ -335,14 +336,40 @@ class _HomeViewState extends State<HomeView> {
                       // ── Sliver 3: Kelimelerim header ────────────
                       SliverToBoxAdapter(
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-                          child: Text(
-                            'Kelimelerim',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
+                          padding: const EdgeInsets.fromLTRB(16, 20, 8, 8),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Kelimelerim',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const PracticeView(),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.psychology_rounded,
+                                  size: 18,
+                                  color: Color(0xFFA06CD5),
+                                ),
+                                label: Text(
+                                  'Pratik Yap',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    color: const Color(0xFFA06CD5),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),

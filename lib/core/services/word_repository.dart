@@ -7,26 +7,14 @@ import '../models/word_model.dart';
 /// Firestore path: `users/{userId}/words/{wordId}`
 class WordRepository {
   WordRepository({required this.userId})
-    : _wordsCollection = FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('words');
+      : _wordsCollection = FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('words');
 
   final String userId;
 
   final CollectionReference<Map<String, dynamic>> _wordsCollection;
-
-  /// Spaced-repetition interval table: mastery level -> wait before next review.
-  /// Level 5 ("mastered") has no entry — those words drop out of practice.
-  static const Map<int, Duration> _reviewIntervals = {
-    0: Duration(days: 1),
-    1: Duration(days: 2),
-    2: Duration(days: 4),
-    3: Duration(days: 7),
-    4: Duration(days: 14),
-  };
-
-  static const int _masteredLevel = 5;
 
   /// Tek pratik oturumunda gösterilecek azami kelime sayısı.
   static const int dailySessionLimit = 20;
@@ -43,17 +31,27 @@ class WordRepository {
         .map((snapshot) => snapshot.docs.map(WordModel.fromFirestore).toList());
   }
 
-  /// Fetches the words due for review right now, as a one-time snapshot
-  /// (not a stream) so the list stays stable for the length of a practice
-  /// session while answers are being submitted. Capped at
-  /// [dailySessionLimit], prioritizing the most overdue words first.
+  /// Fetches the words due for review right now (nextReviewAt <= Timestamp.now()).
+  /// Capped at [dailySessionLimit], prioritizing the most overdue words first.
   Future<List<WordModel>> getDueWords() async {
-    final snapshot = await _wordsCollection
-        .where('nextReviewAt', isLessThanOrEqualTo: Timestamp.now())
-        .orderBy('nextReviewAt')
-        .limit(dailySessionLimit)
-        .get();
-    return snapshot.docs.map(WordModel.fromFirestore).toList();
+    try {
+      final snapshot = await _wordsCollection
+          .where('nextReviewAt', isLessThanOrEqualTo: Timestamp.now())
+          .orderBy('nextReviewAt')
+          .limit(dailySessionLimit)
+          .get();
+      return snapshot.docs.map(WordModel.fromFirestore).toList();
+    } catch (_) {
+      // Fallback in case composite index / single field indexing order requires in-memory sorting
+      final snapshot = await _wordsCollection
+          .where('nextReviewAt', isLessThanOrEqualTo: Timestamp.now())
+          .limit(dailySessionLimit)
+          .get();
+      final list = snapshot.docs.map(WordModel.fromFirestore).toList();
+      list.sort((a, b) => (a.nextReviewAt ?? DateTime.now())
+          .compareTo(b.nextReviewAt ?? DateTime.now()));
+      return list;
+    }
   }
 
   /// Counts the words due for review right now (used for the HomeView badge).
@@ -128,6 +126,8 @@ class WordRepository {
           'turkish': word.turkish,
           'synonyms': word.synonyms,
           'antonyms': word.antonyms,
+          'partOfSpeech': word.partOfSpeech,
+          'exampleSentence': word.exampleSentence,
           'masteryLevel': 0,
           'nextReviewAt': now,
           'createdAt': now,
@@ -140,7 +140,7 @@ class WordRepository {
   }
 
   // ---------------------------------------------------------------------------
-  // UPDATE
+  // UPDATE / SPACED REPETITION
   // ---------------------------------------------------------------------------
 
   /// Overwrites the Firestore document identified by [word.id].
@@ -148,29 +148,64 @@ class WordRepository {
     await _wordsCollection.doc(word.id).update(word.toFirestore());
   }
 
-  /// Applies a practice answer: bumps [currentLevel] up on a correct answer
-  /// or down on an incorrect one (clamped to 0..5), then reschedules
-  /// [wordId]'s next review using [_reviewIntervals]. A level of 5 or above
-  /// is "mastered" and clears `nextReviewAt` so the word stops showing up
-  /// in [getDueWords]/[getDueCount].
+  /// Spaced Repetition (Aralıklı Tekrar) algoritması:
+  ///
+  /// - BİLDİM (correct = true):
+  ///   masteryLevel 1 artar (maksimum 5).
+  ///   Yeni nextReviewAt:
+  ///     Seviye 1: +2 gün
+  ///     Seviye 2: +4 gün
+  ///     Seviye 3: +7 gün
+  ///     Seviye 4: +14 gün
+  ///     Seviye 5: null (artık öğrenildi kabul edilir ve pratikten çıkar)
+  ///
+  /// - BİLEMEDİM (correct = false):
+  ///   masteryLevel 1 düşer (minimum 0).
+  ///   Yeni nextReviewAt: +1 gün (ertesi gün tekrar).
   Future<void> submitAnswer(
     String wordId,
     int currentLevel,
     bool correct,
   ) async {
-    final newLevel = (currentLevel + (correct ? 1 : -1)).clamp(
-      0,
-      _masteredLevel,
-    );
+    final DateTime now = DateTime.now();
 
-    final Timestamp? nextReviewAt = newLevel >= _masteredLevel
-        ? null
-        : Timestamp.fromDate(DateTime.now().add(_reviewIntervals[newLevel]!));
+    if (correct) {
+      final int newLevel = (currentLevel + 1).clamp(0, 5);
+      Timestamp? nextReviewAt;
 
-    await _wordsCollection.doc(wordId).update({
-      'masteryLevel': newLevel,
-      'nextReviewAt': nextReviewAt,
-    });
+      switch (newLevel) {
+        case 1:
+          nextReviewAt = Timestamp.fromDate(now.add(const Duration(days: 2)));
+          break;
+        case 2:
+          nextReviewAt = Timestamp.fromDate(now.add(const Duration(days: 4)));
+          break;
+        case 3:
+          nextReviewAt = Timestamp.fromDate(now.add(const Duration(days: 7)));
+          break;
+        case 4:
+          nextReviewAt = Timestamp.fromDate(now.add(const Duration(days: 14)));
+          break;
+        case 5:
+        default:
+          nextReviewAt = null; // Mastered, drop from practice
+          break;
+      }
+
+      await _wordsCollection.doc(wordId).update({
+        'masteryLevel': newLevel,
+        'nextReviewAt': nextReviewAt,
+      });
+    } else {
+      final int newLevel = (currentLevel - 1).clamp(0, 5);
+      // Bilemedim: ertesi gün tekrar (+1 gün)
+      final nextReviewAt = Timestamp.fromDate(now.add(const Duration(days: 1)));
+
+      await _wordsCollection.doc(wordId).update({
+        'masteryLevel': newLevel,
+        'nextReviewAt': nextReviewAt,
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------

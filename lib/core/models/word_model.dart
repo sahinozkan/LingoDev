@@ -19,6 +19,12 @@ class WordModel {
   /// Antonyms of the word (same language).
   final List<String> antonyms;
 
+  /// Part of speech (e.g. "verb", "noun", "adjective"). Optional.
+  final String partOfSpeech;
+
+  /// Example sentence using the word. Optional.
+  final String exampleSentence;
+
   /// Spaced-repetition mastery level.
   ///
   /// Range: 0 (brand new) – 5 (fully mastered).
@@ -39,6 +45,8 @@ class WordModel {
     required this.turkish,
     this.synonyms = const [],
     this.antonyms = const [],
+    this.partOfSpeech = '',
+    this.exampleSentence = '',
     this.masteryLevel = 0,
     this.nextReviewAt,
     required this.createdAt,
@@ -68,6 +76,8 @@ class WordModel {
       antonyms: (data['antonyms'] as List? ?? const [])
           .map((e) => e.toString())
           .toList(),
+      partOfSpeech: data['partOfSpeech'] as String? ?? '',
+      exampleSentence: data['exampleSentence'] as String? ?? '',
       masteryLevel: ((data['masteryLevel'] as num?)?.toInt() ?? 0).clamp(0, 5),
       nextReviewAt: (data['nextReviewAt'] as Timestamp?)?.toDate(),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -84,6 +94,8 @@ class WordModel {
       'turkish': turkish,
       'synonyms': synonyms,
       'antonyms': antonyms,
+      'partOfSpeech': partOfSpeech,
+      'exampleSentence': exampleSentence,
       'masteryLevel': masteryLevel,
       'nextReviewAt':
           nextReviewAt != null ? Timestamp.fromDate(nextReviewAt!) : null,
@@ -104,6 +116,8 @@ class WordModel {
     String? turkish,
     List<String>? synonyms,
     List<String>? antonyms,
+    String? partOfSpeech,
+    String? exampleSentence,
     int? masteryLevel,
     DateTime? nextReviewAt,
     DateTime? createdAt,
@@ -114,6 +128,8 @@ class WordModel {
       turkish: turkish ?? this.turkish,
       synonyms: synonyms ?? this.synonyms,
       antonyms: antonyms ?? this.antonyms,
+      partOfSpeech: partOfSpeech ?? this.partOfSpeech,
+      exampleSentence: exampleSentence ?? this.exampleSentence,
       masteryLevel: masteryLevel ?? this.masteryLevel,
       nextReviewAt: nextReviewAt ?? this.nextReviewAt,
       createdAt: createdAt ?? this.createdAt,
@@ -130,6 +146,7 @@ class WordModel {
         'id: $id, '
         'english: $english, '
         'turkish: $turkish, '
+        'partOfSpeech: $partOfSpeech, '
         'masteryLevel: $masteryLevel, '
         'nextReviewAt: $nextReviewAt'
         ')';
