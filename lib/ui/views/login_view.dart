@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/app_colors.dart';
 import '../atoms/app_button.dart';
 import '../atoms/app_input.dart';
-import 'home_view.dart';
+import 'main_navigation_view.dart';
 
 /// LingoDev Giriş / Kayıt Ekranı
 /// Firebase Auth entegrasyonlu, premium dark tema
@@ -73,7 +73,7 @@ class _LoginViewState extends State<LoginView>
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const HomeView()),
+          MaterialPageRoute(builder: (_) => const MainNavigationView()),
         );
       }
     } on FirebaseAuthException catch (e) {
@@ -99,7 +99,7 @@ class _LoginViewState extends State<LoginView>
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => const HomeView()),
+          MaterialPageRoute(builder: (_) => const MainNavigationView()),
         );
       }
     } on FirebaseAuthException catch (e) {

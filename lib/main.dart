@@ -1,9 +1,11 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
 import 'ui/views/login_view.dart';
+import 'ui/views/main_navigation_view.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,7 +33,9 @@ class LingoDev extends StatelessWidget {
       title: 'LingoDev',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: const LoginView(),
+      home: FirebaseAuth.instance.currentUser != null
+          ? const MainNavigationView()
+          : const LoginView(),
     );
   }
 }
